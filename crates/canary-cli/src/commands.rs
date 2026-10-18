@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use canary_core::{
     CachePolicy, CacheStore, CanaryError, DefaultPolicyEvaluator, ExecutionContext, ExitCode,
-    NetworkContext, Policy, PolicyEvaluator, ProtocolVersion, RunOptions,
+    NetworkContext, Policy, PolicyEvaluator, ProtocolVersion, RunOptions, Surface,
 };
 use canary_git::{collect_git_context, CliGitRepository};
 use canary_report::{
@@ -219,8 +219,57 @@ async fn run_check_inner(args: CheckArgs) -> Result<ExitCode, CanaryError> {
     } else {
         NetworkMode::Live
     };
-    let live_checks_needed =
-        (config.tests.rpc || config.tests.soroban) && network_mode == NetworkMode::Live;
+
+    let discovered_fixtures = if fixtures_dir.is_dir() {
+        canary_fixtures::load_directory(&fixtures_dir)?
+    } else {
+        Vec::new()
+    };
+    let loaded_fixtures: Vec<_> = canary_runner::filter_fixtures(
+        &discovered_fixtures,
+        args.fixture.as_deref(),
+        args.surface.map(Into::into),
+    )
+    .into_iter()
+    .cloned()
+    .collect();
+
+    if loaded_fixtures.is_empty() && (args.fixture.is_some() || args.surface.is_some()) {
+        let mut filters = Vec::new();
+        if let Some(fixture) = &args.fixture {
+            filters.push(format!("--fixture {fixture:?}"));
+        }
+        if let Some(surface) = args.surface {
+            filters.push(format!("--surface {}", Surface::from(surface)));
+        }
+        return Err(CanaryError::Configuration(format!(
+            "no matching fixtures found for {}",
+            filters.join(" and ")
+        )));
+    }
+
+    let fixture_store = canary_fixtures::validate(&loaded_fixtures)?;
+    let enabled = EnabledSurfaces {
+        xdr: config.tests.xdr,
+        rpc: config.tests.rpc,
+        soroban: config.tests.soroban,
+    };
+    let plan = canary_runner::build_plan_with(
+        &loaded_fixtures,
+        target_protocol,
+        enabled,
+        &project,
+        network_mode,
+    )?;
+
+    let has_explicit_filter = args.fixture.is_some() || args.surface.is_some();
+    let planned_network_checks = !plan.rpc.is_empty() || !plan.soroban.is_empty();
+    let configured_network_checks = config.tests.rpc || config.tests.soroban;
+    let live_checks_needed = (if has_explicit_filter {
+        planned_network_checks
+    } else {
+        configured_network_checks
+    }) && network_mode == NetworkMode::Live;
     let network_name = parse_network_name(&settings.network);
     let (network_context, network_summary) = if live_checks_needed {
         let rpc_url = settings
@@ -306,29 +355,8 @@ async fn run_check_inner(args: CheckArgs) -> Result<ExitCode, CanaryError> {
         )
     };
 
-    let loaded_fixtures = if fixtures_dir.is_dir() {
-        canary_fixtures::load_directory(&fixtures_dir)?
-    } else {
-        Vec::new()
-    };
-    let fixture_store = canary_fixtures::validate(&loaded_fixtures)?;
-
-    let enabled = EnabledSurfaces {
-        xdr: config.tests.xdr,
-        rpc: config.tests.rpc,
-        soroban: config.tests.soroban,
-    };
-    let plan = canary_runner::build_plan_with(
-        &loaded_fixtures,
-        target_protocol,
-        enabled,
-        &project,
-        network_mode,
-    )?;
-
-    // A run that executes nothing proves nothing, so it must not look like a
-    // pass. This is checked before any check runs and before a report exists,
-    // which is why it is a configuration error (exit 2) rather than a result.
+    // Preserve the established diagnostic order for unfiltered runs by
+    // checking empty plans after the normal live-network probe.
     if plan.applicable_count() == 0 {
         let explanation = canary_runner::explain_empty_plan(
             &plan,
