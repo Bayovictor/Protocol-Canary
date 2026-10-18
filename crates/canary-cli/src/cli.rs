@@ -157,6 +157,13 @@ pub struct CheckArgs {
     #[arg(long)]
     pub allow_empty: bool,
 
+    /// Run offline only: execute local XDR checks and skip every fixture
+    /// that requires network access (RPC and Soroban). No network socket is
+    /// opened. Skipped network fixtures are reported with the skip code
+    /// `skip-offline`.
+    #[arg(long)]
+    pub offline: bool,
+
     /// Treat fixture warnings as compatibility failures (exit code 1).
     #[arg(long)]
     pub fail_on_warning: bool,
@@ -396,6 +403,16 @@ mod tests {
     }
 
     #[test]
+    fn test_offline_flag_defaults_to_false() {
+        let cli = Cli::parse_from(["stellar-canary", "check"]);
+        if let Command::Check(args) = cli.command {
+            assert!(!args.offline);
+        } else {
+            panic!("Expected Check command");
+        }
+    }
+
+    #[test]
     fn fail_on_warning_flag_defaults_to_false() {
         let cli = Cli::parse_from(["stellar-canary", "check"]);
         if let Command::Check(args) = cli.command {
@@ -426,6 +443,16 @@ mod tests {
                 other => panic!("unexpected command {other:?}"),
             };
             assert_eq!(root, None, "{command}");
+        }
+    }
+
+    #[test]
+    fn test_offline_flag_parses() {
+        let cli = Cli::parse_from(["stellar-canary", "check", "--offline"]);
+        if let Command::Check(args) = cli.command {
+            assert!(args.offline);
+        } else {
+            panic!("Expected Check command");
         }
     }
 
