@@ -179,7 +179,7 @@ pub struct PlannedFixture {
 pub struct PlannedSkip {
     pub id: String,
     pub surface: String,
-    /// `protocol-mismatch`, `surface-disabled` or `missing-capability`.
+    /// The CF-01 skip code, for example `UNSUPPORTED_PROTOCOL`.
     pub code: String,
     pub reason: String,
 }
@@ -279,7 +279,7 @@ mod tests {
                 skipped: vec![PlannedSkip {
                     id: "p27-xdr-old".to_string(),
                     surface: "xdr".to_string(),
-                    code: "protocol-mismatch".to_string(),
+                    code: "UNSUPPORTED_PROTOCOL".to_string(),
                     reason: "fixture targets protocol 27, this run targets protocol 28".to_string(),
                 }],
                 check_would_refuse: false,
@@ -323,7 +323,7 @@ mod tests {
         assert_eq!(value["fixtures"]["directoryFound"], false);
         assert_eq!(value["plan"]["wouldRun"][0]["id"], "p28-rpc-get-network");
         assert_eq!(value["plan"]["wouldRun"][0]["surface"], "rpc");
-        assert_eq!(value["plan"]["skipped"][0]["code"], "protocol-mismatch");
+        assert_eq!(value["plan"]["skipped"][0]["code"], "UNSUPPORTED_PROTOCOL");
         assert_eq!(value["plan"]["checkWouldRefuse"], false);
         assert_eq!(value["plan"]["refusal"], serde_json::Value::Null);
         assert_eq!(value["workspace"]["members"][0], "contracts/token");

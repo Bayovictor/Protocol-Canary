@@ -44,6 +44,13 @@ All notable changes to this project are documented in this file.
 - A strict parser and deterministic serializer for `.stellar-canary.lock`
   (CF-03) in `canary-config`: `load_lock`, `parse_lock` and `serialize_lock`.
   No command reads or writes a lockfile yet.
+- JSON reports gain an optional `skipped[].code` (CF-01-D): the stable
+  machine-readable skip reason beside the free-form `reason` —
+  `UNSUPPORTED_PROTOCOL`, `SURFACE_DISABLED`, `MISSING_CAPABILITY`, `OFFLINE`, or
+  `UNKNOWN` when the reason is not recognized (`NETWORK_MISMATCH` is
+  reserved for a future network-identity skip). `schemaVersion` stays `1`;
+  older reports lack the field, which reads back as `UNKNOWN`, and
+  consumers must ignore codes they do not know.
 - Common execution errors print an actionable `Hint:` line under the
   `error:` line on stderr: connection failures (check that the local
   standalone node or RPC endpoint is running and reachable), permission

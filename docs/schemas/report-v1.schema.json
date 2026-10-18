@@ -127,6 +127,10 @@
           "reason": {
             "description": "Free-form prose, e.g. \"fixture targets protocol 27, this run targets protocol 28\". Arbitrary text; never render as markup.",
             "type": "string"
+          },
+          "code": {
+            "description": "Stable machine-readable skip reason (UNSUPPORTED_PROTOCOL, SURFACE_DISABLED, MISSING_CAPABILITY, OFFLINE, NETWORK_MISMATCH or UNKNOWN). Absent in reports written before the field existed; consumers must ignore codes they do not know.",
+            "type": "string"
           }
         }
       }

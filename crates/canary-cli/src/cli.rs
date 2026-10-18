@@ -160,7 +160,7 @@ pub struct CheckArgs {
     /// Run offline only: execute local XDR checks and skip every fixture
     /// that requires network access (RPC and Soroban). No network socket is
     /// opened. Skipped network fixtures are reported with the skip code
-    /// `skip-offline`.
+    /// `OFFLINE`.
     #[arg(long)]
     pub offline: bool,
 

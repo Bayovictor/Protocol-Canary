@@ -166,6 +166,7 @@ fn rendered_report() -> String {
             fixture_id: "p29-xdr-1".into(),
             surface: Surface::Xdr,
             reason: "fixture targets protocol 29, this run targets protocol 28".into(),
+            code: canary_core::SkipCode::UnsupportedProtocol,
         }],
         decision: PolicyDecision::Warning,
         git: GitContext {

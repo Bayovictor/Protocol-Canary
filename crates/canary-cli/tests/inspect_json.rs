@@ -99,7 +99,7 @@ fn inspect_format_json_emits_valid_ca03_json() {
     assert_eq!(skipped.len(), 1);
     assert_eq!(skipped[0]["id"], "p27-xdr-old");
     assert_eq!(skipped[0]["surface"], "xdr");
-    assert_eq!(skipped[0]["code"], "protocol-mismatch");
+    assert_eq!(skipped[0]["code"], "UNSUPPORTED_PROTOCOL");
 
     // Workspace fields
     assert!(doc["workspace"]["members"].is_array());
