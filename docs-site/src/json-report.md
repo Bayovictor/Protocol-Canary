@@ -110,3 +110,11 @@ stellar-canary report result.json --format markdown
 
 parses exactly this shape and re-renders it without touching the network
 — see [`report`](./cli/report.md).
+
+## Viewing a report in the browser
+
+The same JSON report can be opened in the static
+[report viewer](./viewer/index.html), a single local page published at
+`/viewer/` on this site. Drop the file onto that page: it is validated
+in the browser, shown as an accessible findings list, and never
+uploaded anywhere.

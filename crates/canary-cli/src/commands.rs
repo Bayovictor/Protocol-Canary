@@ -1,5 +1,6 @@
 //! Command implementations.
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use canary_core::{
@@ -13,10 +14,11 @@ use canary_report::{
 };
 use canary_rpc::{validate_network_info, HttpRpcClient, RetryPolicy, RpcClient, RpcError};
 use canary_runner::{EnabledSurfaces, NetworkMode};
+use clap::CommandFactory;
 
 use crate::cli::{
-    CacheClearArgs, CheckArgs, FixturesArgs, FixturesFormat, InspectArgs, InspectFormat,
-    OutputFormat, ReportArgs,
+    CacheClearArgs, CheckArgs, Cli, CompletionsArgs, FixturesArgs, FixturesFormat, InspectArgs,
+    InspectFormat, OutputFormat, ReportArgs,
 };
 use crate::error::{hint_for, print_error};
 use crate::fixtures_json;
@@ -894,6 +896,9 @@ fn run_inspect_json(setup: InspectSetup) -> Result<(), CanaryError> {
                     ecosystem: item.ecosystem.clone(),
                     dependency: item.dependency.clone(),
                     section: item.section.clone(),
+                    source_file: Some(item.source_file.clone()),
+                    matched_text: Some(item.matched_text.clone()),
+                    reason: Some(item.reason.clone()),
                 })
                 .collect(),
         })
@@ -1286,6 +1291,49 @@ fn run_cache_clear_inner(args: CacheClearArgs) -> Result<ExitCode, CanaryError> 
             cache_dir.display()
         );
     }
+    Ok(ExitCode::Pass)
+}
+
+/// Generates a shell completion script for `stellar-canary` and writes it
+/// to stdout.
+///
+/// The script is produced from the same [`Cli`] command definition the
+/// binary parses with (`Cli::command()`), so it describes the actual
+/// command tree — every subcommand, option and flag this build accepts —
+/// without duplicating any of it. The shell itself was already validated
+/// by clap during argument parsing: an unsupported name exits with a usage
+/// error on stderr (exit status 2) before this runs, so stdout carries only
+/// the script and stays usable as a completion-script file. A failure to
+/// write the script is the one error this command can produce at run time;
+/// it is reported on stderr like every other command error.
+pub fn run_completions(args: CompletionsArgs) -> ExitCode {
+    match run_completions_inner(args) {
+        Ok(exit_code) => exit_code,
+        Err(err) => {
+            eprintln!("error: {err}");
+            ExitCode::from(&err)
+        }
+    }
+}
+
+fn run_completions_inner(args: CompletionsArgs) -> Result<ExitCode, CanaryError> {
+    let shell = clap_complete::Shell::from(args.shell);
+    let mut command = Cli::command();
+    let bin_name = command.get_name().to_string();
+
+    let mut script = Vec::new();
+    clap_complete::generate(shell, &mut command, bin_name, &mut script);
+
+    let stdout = std::io::stdout();
+    let mut handle = stdout.lock();
+    handle
+        .write_all(&script)
+        .and_then(|()| handle.flush())
+        .map_err(|err| {
+            CanaryError::Internal(format!(
+                "failed to write the completion script to stdout: {err}"
+            ))
+        })?;
     Ok(ExitCode::Pass)
 }
 

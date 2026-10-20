@@ -696,6 +696,150 @@ pub fn read_requirements_txt(root: &Path) -> Option<ProjectManifest> {
     read_requirements_manifest(&root.join("requirements.txt"))
 }
 
+fn extract_python_package_name(spec: &str) -> Option<String> {
+    let trimmed = spec.trim().trim_matches(|c| c == '\'' || c == '"');
+    if trimmed.is_empty() {
+        return None;
+    }
+    let name_part = trimmed
+        .split(|c: char| {
+            c.is_whitespace() || matches!(c, '[' | ';' | '<' | '>' | '=' | '~' | '!' | '@' | '^')
+        })
+        .next()?;
+
+    if name_part.is_empty() {
+        None
+    } else {
+        Some(normalize_python_package_name(name_part))
+    }
+}
+
+/// Reads and parses `<root>/pyproject.toml`, if present.
+pub fn read_pyproject_manifest(root: &Path) -> Option<ProjectManifest> {
+    let raw = std::fs::read_to_string(root.join("pyproject.toml")).ok()?;
+    parse_pyproject_manifest(&raw)
+}
+
+/// Reads and parses `<root>/pyproject.toml`, if present (alias for [`read_pyproject_manifest`]).
+pub fn read_pyproject_toml(root: &Path) -> Option<ProjectManifest> {
+    read_pyproject_manifest(root)
+}
+
+/// Parses `pyproject.toml` text into the dependency names it declares, or
+/// `None` when it is not valid TOML.
+pub fn parse_pyproject_manifest(raw: &str) -> Option<ProjectManifest> {
+    let deps = parse_pyproject_dependencies(raw).ok()?;
+    let mut dependency_names: Vec<String> = deps.into_iter().map(|d| d.name).collect();
+    dependency_names.sort();
+    dependency_names.dedup();
+    Some(ProjectManifest { dependency_names })
+}
+
+/// Parses `pyproject.toml` text into declared dependencies with their section names.
+///
+/// Supports PEP 621 `[project.dependencies]` (and `[project.optional-dependencies]`)
+/// as well as Poetry `[tool.poetry.dependencies]` (and `[tool.poetry.dev-dependencies]`,
+/// `[tool.poetry.group.*.dependencies]`).
+pub fn parse_pyproject_dependencies(raw: &str) -> Result<Vec<ManifestDep>, toml::de::Error> {
+    let value: toml::Value = toml::from_str(raw)?;
+    let mut deps = Vec::new();
+
+    // 1. PEP 621: [project.dependencies]
+    if let Some(project) = value.get("project").and_then(toml::Value::as_table) {
+        if let Some(dependencies) = project.get("dependencies").and_then(toml::Value::as_array) {
+            for item in dependencies {
+                if let Some(spec) = item.as_str() {
+                    if let Some(name) = extract_python_package_name(spec) {
+                        deps.push(ManifestDep {
+                            name,
+                            section: "project.dependencies".to_string(),
+                        });
+                    }
+                }
+            }
+        }
+
+        // PEP 621: [project.optional-dependencies]
+        if let Some(optional) = project
+            .get("optional-dependencies")
+            .and_then(toml::Value::as_table)
+        {
+            for (group, group_deps) in optional {
+                if let Some(arr) = group_deps.as_array() {
+                    for item in arr {
+                        if let Some(spec) = item.as_str() {
+                            if let Some(name) = extract_python_package_name(spec) {
+                                deps.push(ManifestDep {
+                                    name,
+                                    section: format!("project.optional-dependencies.{group}"),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Poetry: [tool.poetry.dependencies]
+    if let Some(tool) = value.get("tool").and_then(toml::Value::as_table) {
+        if let Some(poetry) = tool.get("poetry").and_then(toml::Value::as_table) {
+            if let Some(dependencies) = poetry.get("dependencies").and_then(toml::Value::as_table) {
+                for key in dependencies.keys() {
+                    if key != "python" {
+                        let normalized = normalize_python_package_name(key);
+                        deps.push(ManifestDep {
+                            name: normalized,
+                            section: "tool.poetry.dependencies".to_string(),
+                        });
+                    }
+                }
+            }
+
+            // [tool.poetry.dev-dependencies]
+            if let Some(dev_deps) = poetry
+                .get("dev-dependencies")
+                .and_then(toml::Value::as_table)
+            {
+                for key in dev_deps.keys() {
+                    if key != "python" {
+                        let normalized = normalize_python_package_name(key);
+                        deps.push(ManifestDep {
+                            name: normalized,
+                            section: "tool.poetry.dev-dependencies".to_string(),
+                        });
+                    }
+                }
+            }
+
+            // [tool.poetry.group.<name>.dependencies]
+            if let Some(group) = poetry.get("group").and_then(toml::Value::as_table) {
+                for (group_name, group_table) in group {
+                    if let Some(table) = group_table.as_table() {
+                        if let Some(deps_table) =
+                            table.get("dependencies").and_then(toml::Value::as_table)
+                        {
+                            for key in deps_table.keys() {
+                                if key != "python" {
+                                    let normalized = normalize_python_package_name(key);
+                                    deps.push(ManifestDep {
+                                        name: normalized,
+                                        section: format!(
+                                            "tool.poetry.group.{group_name}.dependencies"
+                                        ),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(deps)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -779,6 +923,7 @@ mod tests {
         assert!(read_cargo_manifest(&dir.path).is_none());
         assert!(read_package_json(&dir.path).is_none());
         assert!(read_go_mod(&dir.path).is_none());
+        assert!(read_pyproject_manifest(&dir.path).is_none());
     }
 
     #[test]
@@ -1093,5 +1238,127 @@ fastapi>=0.100.0
         let after = std::fs::metadata(&path).unwrap();
         assert_eq!(original, after_content);
         assert_eq!(before.len(), after.len());
+    }
+
+    #[test]
+    fn reads_pep621_pyproject_dependencies() {
+        let raw = r#"
+        [project]
+        name = "my-stellar-app"
+        version = "0.1.0"
+        dependencies = [
+            "stellar-sdk>=9.0.0",
+            "requests>=2.28.0",
+            "stellar_base==0.1.0",
+        ]
+
+        [project.optional-dependencies]
+        test = ["pytest>=7.0"]
+        "#;
+        let manifest = parse_pyproject_manifest(raw).expect("valid pyproject");
+        assert!(manifest.has_dependency("stellar-sdk"));
+        assert!(manifest.has_dependency("stellar-base"));
+        assert!(manifest.has_dependency("requests"));
+        assert!(manifest.has_dependency("pytest"));
+        assert!(!manifest.has_dependency("nonexistent"));
+
+        let deps = parse_pyproject_dependencies(raw).expect("dependencies");
+        assert!(deps
+            .iter()
+            .any(|d| d.name == "stellar-sdk" && d.section == "project.dependencies"));
+        assert!(deps
+            .iter()
+            .any(|d| d.name == "pytest" && d.section == "project.optional-dependencies.test"));
+    }
+
+    #[test]
+    fn reads_pep621_pyproject_with_extras_and_markers() {
+        let raw = r#"
+        [project]
+        name = "complex-deps"
+        dependencies = [
+            "stellar-sdk[aiohttp]>=9.0.0; python_version >= '3.10'",
+        ]
+        "#;
+        let manifest = parse_pyproject_manifest(raw).expect("valid pyproject");
+        assert!(manifest.has_dependency("stellar-sdk"));
+    }
+
+    #[test]
+    fn reads_poetry_pyproject_dependencies() {
+        let raw = r#"
+        [tool.poetry]
+        name = "poetry-app"
+        version = "0.1.0"
+
+        [tool.poetry.dependencies]
+        python = "^3.10"
+        stellar-sdk = "^9.0.0"
+        requests = { version = ">=2.28", optional = true }
+        "#;
+        let manifest = parse_pyproject_manifest(raw).expect("valid poetry");
+        assert!(manifest.has_dependency("stellar-sdk"));
+        assert!(manifest.has_dependency("requests"));
+        assert!(!manifest.has_dependency("python"));
+
+        let deps = parse_pyproject_dependencies(raw).expect("dependencies");
+        assert!(deps
+            .iter()
+            .any(|d| d.name == "stellar-sdk" && d.section == "tool.poetry.dependencies"));
+    }
+
+    #[test]
+    fn reads_poetry_dev_and_group_dependencies() {
+        let raw = r#"
+        [tool.poetry.dev-dependencies]
+        pytest = "^7.0"
+
+        [tool.poetry.group.sdk.dependencies]
+        stellar-sdk = "^9.0.0"
+        "#;
+        let manifest = parse_pyproject_manifest(raw).expect("valid poetry groups");
+        assert!(manifest.has_dependency("stellar-sdk"));
+        assert!(manifest.has_dependency("pytest"));
+    }
+
+    #[test]
+    fn unrelated_python_project_has_no_stellar_dependencies() {
+        let raw = r#"
+        [project]
+        name = "unrelated"
+        dependencies = [
+            "fastapi>=0.100.0",
+            "uvicorn>=0.23.0",
+        ]
+        "#;
+        let manifest = parse_pyproject_manifest(raw).expect("valid pyproject");
+        assert!(!manifest.has_dependency("stellar-sdk"));
+        assert!(manifest.has_dependency("fastapi"));
+    }
+
+    #[test]
+    fn invalid_toml_pyproject_returns_none_or_err() {
+        let raw = "invalid toml = = = [ [ [";
+        assert!(parse_pyproject_manifest(raw).is_none());
+        assert!(parse_pyproject_dependencies(raw).is_err());
+    }
+
+    #[test]
+    fn pyproject_does_not_mutate_file() {
+        let dir = super::super::test_support::temp_dir("manifest-pyproject");
+        let path = dir.path.join("pyproject.toml");
+        let original_content =
+            "[project]\nname = \"demo\"\ndependencies = [\"stellar-sdk>=9.0\"]\n";
+        std::fs::write(&path, original_content).unwrap();
+
+        let before_metadata = std::fs::metadata(&path).unwrap();
+        let manifest = read_pyproject_manifest(&dir.path).expect("read pyproject.toml");
+        assert!(manifest.has_dependency("stellar-sdk"));
+
+        let after_content = std::fs::read_to_string(&path).unwrap();
+        let after_metadata = std::fs::metadata(&path).unwrap();
+
+        assert_eq!(original_content, after_content);
+        assert_eq!(before_metadata.len(), after_metadata.len());
     }
 }

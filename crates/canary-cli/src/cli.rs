@@ -16,8 +16,9 @@ use canary_core::Surface;
 ///
 /// `Cli` is the `clap` entry point: it holds the one required subcommand the
 /// user typed — [`Command::Check`], [`Command::Inspect`],
-/// [`Command::Fixtures`], [`Command::Report`] or [`Command::Version`] —
-/// together with that subcommand's own argument struct. The binary name and
+/// [`Command::Fixtures`], [`Command::Report`], [`Command::Completions`] or
+/// [`Command::Version`] — together with that subcommand's own argument
+/// struct. The binary name and
 /// version banner come from the `#[command(...)]` attributes above, and flags
 /// that apply to a single run live on the per-command `*Args` types rather
 /// than here.
@@ -40,9 +41,10 @@ pub struct Cli {
 ///
 /// `Check` runs compatibility assertions, while `Inspect` and `Fixtures`
 /// provide offline project and fixture information. `Report` renders a
-/// previously generated JSON report, and `Version` prints the tool version.
-/// Parsing this enum is handled by `clap`; the variants themselves do not
-/// perform I/O or panic during argument parsing.
+/// previously generated JSON report, `Completions` prints a shell
+/// completion script, and `Version` prints the tool version. Parsing this
+/// enum is handled by `clap`; the variants themselves do not perform I/O or
+/// panic during argument parsing.
 pub enum Command {
     /// Run compatibility checks against the current project.
     Check(CheckArgs),
@@ -55,6 +57,8 @@ pub enum Command {
     /// Manage the local result cache.
     #[command(subcommand)]
     Cache(CacheArgs),
+    /// Print a shell completion script.
+    Completions(CompletionsArgs),
     /// Print the tool version.
     Version,
 }
@@ -490,6 +494,69 @@ pub struct ReportArgs {
     pub format: OutputFormat,
 }
 
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
+/// The shells `stellar-canary completions` accepts.
+///
+/// The four variants cover every shell this release generates scripts for
+/// and map one-to-one onto the matching [`clap_complete::Shell`] generator
+/// (see the `From` impl below). clap validates the positional argument
+/// against these variants, so an unsupported name — or a misspelling — is
+/// a usage error (exit status 2) whose message lists the accepted input
+/// spellings, `bash`, `zsh`, `fish` and `powershell`. There is no default
+/// shell: input is never silently mapped to one.
+pub enum CompletionShell {
+    /// Bourne-Again shell (`bash`).
+    Bash,
+    /// Z shell (`zsh`).
+    Zsh,
+    /// Friendly interactive shell (`fish`).
+    Fish,
+    /// Microsoft PowerShell (`powershell`).
+    #[value(name = "powershell")]
+    PowerShell,
+}
+
+impl From<CompletionShell> for clap_complete::Shell {
+    fn from(value: CompletionShell) -> Self {
+        match value {
+            CompletionShell::Bash => clap_complete::Shell::Bash,
+            CompletionShell::Zsh => clap_complete::Shell::Zsh,
+            CompletionShell::Fish => clap_complete::Shell::Fish,
+            CompletionShell::PowerShell => clap_complete::Shell::PowerShell,
+        }
+    }
+}
+
+#[derive(Debug, Parser)]
+/// Arguments for the `stellar-canary completions` subcommand
+/// ([`Command::Completions`]).
+///
+/// `completions` prints a shell completion script for the requested shell
+/// on stdout. The script is generated from the same [`Cli`] command
+/// definition the binary parses with, so it always describes the real
+/// command tree — every subcommand, option and flag this build accepts.
+/// Stdout carries only the script, which makes it safe to redirect or pipe:
+///
+/// ```text
+/// stellar-canary completions bash > /etc/bash_completion.d/stellar-canary
+/// stellar-canary completions zsh > "${fpath[1]}/_stellar-canary"
+/// stellar-canary completions fish > ~/.config/fish/completions/stellar-canary.fish
+/// stellar-canary completions powershell > stellar-canary.ps1
+/// ```
+///
+/// Parsing is performed by `clap` and does not perform I/O or panic. The
+/// single positional [`CompletionsArgs::shell`] is required and is
+/// validated against [`CompletionShell`]: a missing, unknown or misspelled
+/// shell is a usage error reported on stderr with exit status 2 — and with
+/// the supported shells listed — before a `CompletionsArgs` value exists,
+/// so an error can never contaminate the completion script on stdout.
+pub struct CompletionsArgs {
+    /// Shell to generate a completion script for: bash, zsh, fish or
+    /// powershell.
+    #[arg(value_enum, value_name = "SHELL")]
+    pub shell: CompletionShell,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -763,5 +830,58 @@ mod tests {
         } else {
             panic!("Expected Cache::Clear command");
         }
+    }
+
+    #[test]
+    fn completions_parses_every_supported_shell_name() {
+        for shell in ["bash", "zsh", "fish", "powershell"] {
+            let cli = Cli::parse_from(["stellar-canary", "completions", shell]);
+            if let Command::Completions(args) = cli.command {
+                assert_eq!(args.shell.to_possible_value().unwrap().get_name(), shell);
+            } else {
+                panic!("Expected Completions command");
+            }
+        }
+    }
+
+    /// An unsupported shell must fail argument validation (never fall back
+    /// to a default shell), and the error must list every accepted name so
+    /// the user can correct it without reading the docs.
+    #[test]
+    fn completions_rejects_an_unsupported_shell_and_lists_the_supported_ones() {
+        let err = Cli::try_parse_from(["stellar-canary", "completions", "unsupported"])
+            .expect_err("an unsupported shell must fail argument validation");
+        assert_eq!(err.kind(), clap::error::ErrorKind::InvalidValue);
+        let text = err.to_string();
+        for shell in ["bash", "zsh", "fish", "powershell"] {
+            assert!(
+                text.contains(shell),
+                "the error should list {shell:?}: {text}"
+            );
+        }
+    }
+
+    /// The shell is the one required argument of `completions`; asking for
+    /// it without giving it is a usage error on stderr, not a panic or a
+    /// script for a guessed shell.
+    #[test]
+    fn completions_requires_a_shell() {
+        let err = Cli::try_parse_from(["stellar-canary", "completions"])
+            .expect_err("a missing shell must fail argument validation");
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+        let text = err.to_string();
+        assert!(text.contains("SHELL"), "{text}");
+    }
+
+    /// `ValueEnum` must render the PowerShell input name as the single
+    /// word `powershell` (not the derived kebab-case `power-shell`), since
+    /// that spelling is what the docs, the help text and users use.
+    #[test]
+    fn completion_shell_input_names_are_the_documented_ones() {
+        let names: Vec<String> = CompletionShell::value_variants()
+            .iter()
+            .map(|shell| shell.to_possible_value().unwrap().get_name().to_string())
+            .collect();
+        assert_eq!(names, ["bash", "zsh", "fish", "powershell"]);
     }
 }
