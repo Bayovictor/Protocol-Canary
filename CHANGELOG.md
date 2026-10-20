@@ -108,6 +108,14 @@ All notable changes to this project are documented in this file.
   members are scanned (a boundary diagnostic is returned beyond that), and a
   virtual workspace whose members use `soroban-sdk` is now detected as a
   Soroban project instead of `Unknown`. Symbolic links are not followed.
+- `stellar-canary completions <bash|zsh|fish|powershell>` (issue #500): prints
+  a shell completion script on stdout, generated from the same clap command
+  definition the binary parses with, so the script always describes the real
+  subcommands, options and flags of the installed version. Stdout carries only
+  the script — diagnostics go to stderr — so it can be redirected to a file or
+  sourced from a shell configuration. An unsupported shell name is rejected by
+  argument parsing with exit code `2` and an error on stderr that lists the
+  four supported shells; no script is emitted.
 
 ### Changed
 
@@ -123,6 +131,37 @@ All notable changes to this project are documented in this file.
   unparseable report on disk. An existing report's permissions are
   preserved, a failed write leaves no `.tmp` file behind, and the written
   bytes are unchanged (still exactly what stdout prints).
+- The statically hosted report viewer (CF-08-E, #463): loading a report
+  now shows findings and skipped fixtures as an accessible list —
+  surface filters as a `role="tablist"` tabs pattern with
+  `aria-selected` and a roving tabindex moved by the arrow keys, Home
+  and End, a labelled search box whose `aria-live="polite"` region
+  announces filtered counts and the empty state, collapsed `details`
+  per result, and a native modal `<dialog>` with the raw report text
+  that traps focus and returns it to the trigger on close. The theme
+  button reports its state with `aria-pressed`, and keyboard focus is
+  a 3px ring in both themes.
+- Themes in the viewer (E-088, #464): a `--surface` token joins the
+  palette and every colour pair is verified to WCAG AA by the test
+  suite — text at 4.5:1 on both backgrounds, borders and focus rings
+  at 3:1. The OS preference is the default (`prefers-color-scheme`;
+  both dark blocks are identical), an explicit toggle persists under
+  `stellar-canary-viewer:theme`, and denied storage falls back to the
+  OS theme without failing.
+- Security regression tests for the viewer (CF-08-H, #465): a corpus
+  with XSS payloads in every string field, oversized strings, deeply
+  nested JSON, duplicate identities, unknown enums and a wrong
+  `schemaVersion`. Rendering runs `app.js` against a stub DOM that
+  throws on any HTML sink, proving hostile text stays inert inside
+  text nodes, no URL-bearing attribute is written, a 10 MiB file is
+  refused before being read, and no network API is used (the page
+  ships `connect-src 'none'`). Runs in CI with the other viewer suites.
+- The documentation workflow stages the viewer into `docs-site/src/viewer/`
+  before the mdBook build, so the Pages site serves it at `/viewer/`
+  beside the book (CF-08-F, #466). The summary gains an unnumbered
+  "Report Viewer" sidebar entry, the JSON Report page cross-links it,
+  the link check covers the new link, and `create-missing = false`
+  makes a missing viewer bundle fail the build loudly.
 
 ## [0.2.0] - 2026-10-09
 

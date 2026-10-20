@@ -102,3 +102,17 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
+  viewer:
+    name: viewer tests (node)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Run the viewer suites
+        run: >
+          node --test
+          viewer/test/viewer.test.mjs
+          viewer/test/security.test.mjs
+          viewer/test/a11y.test.mjs
+          viewer/test/publish.test.mjs
+
