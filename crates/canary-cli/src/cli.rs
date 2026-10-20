@@ -55,6 +55,9 @@ pub enum Command {
     /// Manage the local result cache.
     #[command(subcommand)]
     Cache(CacheArgs),
+    /// Manage the fixture-pack lockfile.
+    #[command(subcommand)]
+    Lock(LockArgs),
     /// Print the tool version.
     Version,
 }
@@ -268,6 +271,50 @@ impl From<SurfaceFilter> for Surface {
 pub enum CacheArgs {
     /// Delete cached fixture execution results and report reclaimed space.
     Clear(CacheClearArgs),
+}
+
+/// Arguments for the `lock` command group (CF-03).
+///
+/// `lock verify` re-checks the pin a `.stellar-canary.lock` file holds: it
+/// loads the lock under the parser rules of CF-03 section 3, computes the
+/// `canary-pack-v1` digest (CF-02) of the fixture directory the
+/// configuration resolves to, and compares the two. It never writes: the
+/// fixture pack, the lockfile, and the cache are left exactly as they are.
+#[derive(Debug, Subcommand)]
+pub enum LockArgs {
+    /// Verify that the lockfile still matches the fixture pack.
+    Verify(LockVerifyArgs),
+}
+
+/// Arguments for `stellar-canary lock verify`.
+///
+/// # Examples
+///
+/// ```text
+/// stellar-canary lock verify
+/// stellar-canary lock verify --project-root path/to/project
+/// stellar-canary lock verify --fixtures-dir ci/fixtures
+/// ```
+#[derive(Debug, Parser)]
+pub struct LockVerifyArgs {
+    /// Directory to treat as the project root (default: the current
+    /// directory). Relative `--config` and `--fixtures-dir` paths are
+    /// resolved against it. The root is never searched for in parent
+    /// directories.
+    #[arg(long = "project-root", value_name = "PATH")]
+    pub project_root: Option<PathBuf>,
+
+    /// Directory containing fixture files (overrides `fixtures_dir` in
+    /// .stellar-canary.toml; default: fixtures). Overriding the location
+    /// does not waive the pin: the chosen directory is still verified
+    /// against `packDigest`.
+    #[arg(long = "fixtures-dir", value_name = "PATH")]
+    pub fixtures_dir: Option<PathBuf>,
+
+    /// Path to a configuration file (default: .stellar-canary.toml in the
+    /// project root).
+    #[arg(long)]
+    pub config: Option<PathBuf>,
 }
 
 /// Arguments for `stellar-canary cache clear`.
