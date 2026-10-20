@@ -1,11 +1,16 @@
+/* Theme tokens: every colour pair below is verified to WCAG AA by
+ * viewer/test/a11y.test.mjs — text pairs at 4.5:1 or better on both `--bg`
+ * and `--surface`, borders and focus outlines at 3:1 or better. Keep the
+ * two dark blocks identical; the test asserts that too. */
 :root {
   --bg: #ffffff;
+  --surface: #f2f4f8;
   --fg: #1a1a1a;
   --muted: #555555;
-  --border: #c9c9c9;
+  --border: #767b85;
   --accent: #1f4fbf;
   --pass: #1a7f37;
-  --warning: #9a6700;
+  --warning: #8a5900;
   --fail: #b42318;
   --invalid: #6e2fb3;
   /* High-contrast pair for the protocol-mismatch banner: white on #b42318
@@ -18,9 +23,10 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #14161a;
+    --surface: #1e2229;
     --fg: #ececec;
     --muted: #a8a8a8;
-    --border: #3a3d44;
+    --border: #6b7280;
     --accent: #7ea6ff;
     --pass: #56d364;
     --warning: #e3b341;
@@ -37,9 +43,10 @@
 
 :root[data-theme="dark"] {
   --bg: #14161a;
+  --surface: #1e2229;
   --fg: #ececec;
   --muted: #a8a8a8;
-  --border: #3a3d44;
+  --border: #6b7280;
   --accent: #7ea6ff;
   --pass: #56d364;
   --warning: #e3b341;
@@ -87,6 +94,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
   border: 2px dashed var(--border);
   border-radius: 6px;
   padding: 1rem;
+  background: var(--surface);
 }
 
 .drop[data-active="true"] { border-color: var(--accent); }
