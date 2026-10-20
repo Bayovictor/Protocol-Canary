@@ -1,5 +1,7 @@
 # Summary
 
+[Report Viewer](./viewer/index.html)
+
 [Protocol Canary](./index.md)
 
 - [What Problem Does It Solve?](./problem.md)
