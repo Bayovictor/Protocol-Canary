@@ -10,7 +10,7 @@ use crate::capabilities::{
 };
 use crate::manifest::{
     parse_cargo_dependencies, parse_cargo_manifest, parse_go_mod_dependencies,
-    parse_package_json_dependencies, parse_requirements_dependencies,
+    parse_package_json_dependencies, parse_pyproject_dependencies, parse_requirements_dependencies,
     parse_workspace_package_json_dependencies, read_package_json, ProjectManifest,
 };
 use crate::workspace::{
@@ -272,6 +272,63 @@ pub fn detect_details(root: &Path) -> DetailedDetection {
                             detail: format!("go.mod could not be read: {e}"),
                         });
                     }
+                }
+            }
+        }
+    }
+
+    // 4b. pyproject.toml
+    let root_pyproject = root.join("pyproject.toml");
+    if let Ok(meta) = std::fs::symlink_metadata(&root_pyproject) {
+        if meta.file_type().is_symlink() {
+            diagnostics.push(crate::workspace::Diagnostic {
+                code: crate::workspace::DiagnosticCode::SymlinkSkipped,
+                detail: "pyproject.toml is a symbolic link and was not followed".to_string(),
+            });
+        } else if meta.len() > crate::workspace::MAX_MANIFEST_BYTES {
+            diagnostics.push(crate::workspace::Diagnostic {
+                code: crate::workspace::DiagnosticCode::ManifestTooLarge,
+                detail: format!(
+                    "pyproject.toml is larger than {} bytes",
+                    crate::workspace::MAX_MANIFEST_BYTES
+                ),
+            });
+        } else {
+            match std::fs::read_to_string(&root_pyproject) {
+                Ok(raw) => {
+                    inspected.push("pyproject.toml".to_string());
+                    match parse_pyproject_dependencies(&raw) {
+                        Ok(deps) => {
+                            let mut dep_names = Vec::new();
+                            for dep in deps {
+                                record_dep_evidence(
+                                    &dep.name,
+                                    &dep.section,
+                                    "pyproject.toml",
+                                    "python",
+                                    &mut all_evidence,
+                                );
+                                dep_names.push(dep.name);
+                            }
+                            dep_names.sort();
+                            dep_names.dedup();
+                            manifests.push(ProjectManifest {
+                                dependency_names: dep_names,
+                            });
+                        }
+                        Err(err) => {
+                            diagnostics.push(crate::workspace::Diagnostic {
+                                code: crate::workspace::DiagnosticCode::ManifestUnparseable,
+                                detail: format!("pyproject.toml is not valid TOML: {err}"),
+                            });
+                        }
+                    }
+                }
+                Err(err) => {
+                    diagnostics.push(crate::workspace::Diagnostic {
+                        code: crate::workspace::DiagnosticCode::ManifestUnparseable,
+                        detail: format!("pyproject.toml could not be read: {err}"),
+                    });
                 }
             }
         }
@@ -1086,5 +1143,105 @@ mod tests {
             .contains(&Capability::StellarSdkDependency));
         assert!(details.capability_evidence.is_empty());
         assert!(details.inspected.contains(&"requirements.txt".to_string()));
+    }
+
+    #[test]
+    fn detects_stellar_sdk_in_pep621_pyproject() {
+        let dir = crate::test_support::temp_dir("detect-pyproject-pep621");
+        std::fs::write(
+            dir.path.join("pyproject.toml"),
+            "[project]\nname = \"pep621-py\"\nversion = \"0.1.0\"\ndependencies = [\"stellar-sdk>=9.0\"]\n",
+        )
+        .unwrap();
+
+        let details = detect_details(&dir.path);
+        assert_eq!(details.context.project_type, ProjectType::StellarSdk);
+        assert!(details
+            .context
+            .capabilities
+            .contains(&Capability::PythonSdk));
+
+        let ev = details
+            .capability_evidence
+            .iter()
+            .find(|c| c.capability == Capability::PythonSdk)
+            .expect("PythonSdk capability evidence");
+        assert_eq!(ev.evidence.len(), 1);
+        assert_eq!(ev.evidence[0].manifest, "pyproject.toml");
+        assert_eq!(ev.evidence[0].ecosystem, "python");
+        assert_eq!(ev.evidence[0].dependency.as_deref(), Some("stellar-sdk"));
+        assert_eq!(
+            ev.evidence[0].section.as_deref(),
+            Some("project.dependencies")
+        );
+    }
+
+    #[test]
+    fn detects_stellar_sdk_in_poetry_pyproject() {
+        let dir = crate::test_support::temp_dir("detect-pyproject-poetry");
+        std::fs::write(
+            dir.path.join("pyproject.toml"),
+            "[tool.poetry]\nname = \"poetry-py\"\nversion = \"0.1.0\"\n\n[tool.poetry.dependencies]\npython = \"^3.10\"\nstellar-sdk = \"^9.0\"\n",
+        )
+        .unwrap();
+
+        let details = detect_details(&dir.path);
+        assert_eq!(details.context.project_type, ProjectType::StellarSdk);
+        assert!(details
+            .context
+            .capabilities
+            .contains(&Capability::PythonSdk));
+
+        let ev = details
+            .capability_evidence
+            .iter()
+            .find(|c| c.capability == Capability::PythonSdk)
+            .expect("PythonSdk capability evidence");
+        assert_eq!(ev.evidence.len(), 1);
+        assert_eq!(ev.evidence[0].manifest, "pyproject.toml");
+        assert_eq!(ev.evidence[0].ecosystem, "python");
+        assert_eq!(ev.evidence[0].dependency.as_deref(), Some("stellar-sdk"));
+        assert_eq!(
+            ev.evidence[0].section.as_deref(),
+            Some("tool.poetry.dependencies")
+        );
+    }
+
+    #[test]
+    fn unrelated_pyproject_does_not_trigger_stellar_capability() {
+        let dir = crate::test_support::temp_dir("detect-pyproject-unrelated");
+        std::fs::write(
+            dir.path.join("pyproject.toml"),
+            "[project]\nname = \"unrelated\"\nversion = \"0.1.0\"\ndependencies = [\"fastapi>=0.100\", \"requests>=2.0\"]\n",
+        )
+        .unwrap();
+
+        let details = detect_details(&dir.path);
+        assert_eq!(details.context.project_type, ProjectType::Unknown);
+        assert!(!details
+            .context
+            .capabilities
+            .contains(&Capability::PythonSdk));
+        assert!(details.capability_evidence.is_empty());
+        assert!(details.inspected.contains(&"pyproject.toml".to_string()));
+    }
+
+    #[test]
+    fn invalid_toml_pyproject_produces_warning_diagnostic_without_halting() {
+        let dir = crate::test_support::temp_dir("detect-pyproject-invalid");
+        std::fs::write(dir.path.join("pyproject.toml"), "broken toml [[[ = = =").unwrap();
+
+        let details = detect_details(&dir.path);
+        assert_eq!(details.context.project_type, ProjectType::Unknown);
+        assert!(details.inspected.contains(&"pyproject.toml".to_string()));
+        let unparseable = details
+            .diagnostics
+            .iter()
+            .find(|d| d.code == crate::workspace::DiagnosticCode::ManifestUnparseable);
+        assert!(
+            unparseable.is_some(),
+            "expected manifest-unparseable diagnostic"
+        );
+        assert!(unparseable.unwrap().detail.contains("pyproject.toml"));
     }
 }
