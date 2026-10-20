@@ -108,6 +108,14 @@ All notable changes to this project are documented in this file.
   members are scanned (a boundary diagnostic is returned beyond that), and a
   virtual workspace whose members use `soroban-sdk` is now detected as a
   Soroban project instead of `Unknown`. Symbolic links are not followed.
+- `stellar-canary completions <bash|zsh|fish|powershell>` (issue #500): prints
+  a shell completion script on stdout, generated from the same clap command
+  definition the binary parses with, so the script always describes the real
+  subcommands, options and flags of the installed version. Stdout carries only
+  the script — diagnostics go to stderr — so it can be redirected to a file or
+  sourced from a shell configuration. An unsupported shell name is rejected by
+  argument parsing with exit code `2` and an error on stderr that lists the
+  four supported shells; no script is emitted.
 
 ### Changed
 

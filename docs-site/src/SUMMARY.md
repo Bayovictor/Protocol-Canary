@@ -15,6 +15,7 @@
   - [inspect](./cli/inspect.md)
   - [fixtures](./cli/fixtures.md)
   - [report](./cli/report.md)
+  - [completions](./cli/completions.md)
   - [version](./cli/version.md)
 - [Exit Codes](./exit-codes.md)
 - [Protocol 28](./protocol-28.md)

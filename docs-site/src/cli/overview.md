@@ -1,8 +1,7 @@
 # CLI Reference
 
-`stellar-canary` ships six subcommands. This reference matches the CLI
-shipped in `v0.1.1`, verified directly against `stellar-canary --help`
-and each subcommand's own `--help` output.
+`stellar-canary` ships seven subcommands. This reference matches the
+shipped CLI, verified directly against the binary's help output.
 
 ```text
 Rehearse Stellar protocol upgrades before they reach your production stack.
@@ -10,16 +9,17 @@ Rehearse Stellar protocol upgrades before they reach your production stack.
 Usage: stellar-canary <COMMAND>
 
 Commands:
-  cache    Manage the local result cache
-  check    Run compatibility checks against the current project
-  inspect  Print offline project diagnostics
-  fixtures List fixtures available for a protocol
-  report   Render a previously generated JSON report
-  version  Print the tool version
-  help     Print this message or the help of the given subcommand(s)
+  check        Run compatibility checks against the current project
+  inspect      Print offline project diagnostics
+  fixtures     List fixtures available for a protocol
+  report       Render a previously generated JSON report
+  cache        Manage the local result cache
+  completions  Print a shell completion script
+  version      Print the tool version
+  help         Print this message or the help of the given subcommand(s)
 
 Options:
-  -h, --help     Print help
+  -h, --help     Print help (see more with '--help')
   -V, --version  Print version
 ```
 
@@ -30,6 +30,7 @@ Options:
 | [`inspect`](./inspect.md) | Print offline project diagnostics — no fixtures run, no network call. |
 | [`fixtures`](./fixtures.md) | List the fixtures a given `--fixtures-dir`/`--protocol` combination would run. |
 | [`report`](./report.md) | Re-render a previously saved JSON report in another format, without touching the network. |
+| [`completions`](./completions.md) | Print a shell completion script for bash, zsh, fish or powershell. |
 | `version` | Print the tool's own version. See [version](./version.md). |
 
 ## Project root
