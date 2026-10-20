@@ -26,7 +26,7 @@ use sha2::{Digest, Sha256};
 
 /// Plain SHA-256 of `bytes` as lowercase hex (no framing, unlike
 /// `canary_core::sha256_hex`, which length-prefixes its parts).
-fn sha256_hex(bytes: &[u8]) -> String {
+pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
         .iter()
         .map(|byte| format!("{byte:02x}"))
@@ -130,10 +130,14 @@ pub fn pack_digest(root: &Path) -> Result<PackDigest, PackError> {
     }
     for (relative, absolute) in &tomls {
         for field in ["input_file", "expected_file"] {
-            if let Some((payload_rel, payload_abs)) =
-                resolve_payload(root, relative, absolute, field)?
+            if let Ok(Some((payload_rel, payload_abs))) =
+                resolve_payload(root, relative, absolute, field)
             {
                 members.insert(payload_rel, payload_abs);
+            } else if let Err(e) = resolve_payload(root, relative, absolute, field) {
+                if !matches!(e, PackError::InvalidToml { .. }) {
+                    return Err(e);
+                }
             }
         }
     }
