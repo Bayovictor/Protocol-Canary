@@ -380,7 +380,7 @@ pub(crate) fn scan_npm_workspace_with_limit(root: &Path, member_limit: usize) ->
     }
     if total > member_limit {
         scan.diagnostics.push(Diagnostic {
-            code: DiagnosticCode::ScanBoundReached,
+            code: DiagnosticCode::ScanBoundHit,
             detail: format!(
                 "workspace members limit {member_limit} ({total} found); the rest were not scanned"
             ),

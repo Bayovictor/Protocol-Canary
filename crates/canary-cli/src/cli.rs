@@ -16,9 +16,9 @@ use canary_core::Surface;
 ///
 /// `Cli` is the `clap` entry point: it holds the one required subcommand the
 /// user typed — [`Command::Check`], [`Command::Inspect`],
-/// [`Command::Fixtures`], [`Command::Report`], [`Command::Completions`] or
-/// [`Command::Version`] — together with that subcommand's own argument
-/// struct. The binary name and
+/// [`Command::Fixtures`], [`Command::Report`], [`Command::Cache`],
+/// [`Command::Lock`], [`Command::Completions`] or [`Command::Version`] —
+/// together with that subcommand's own argument struct. The binary name and
 /// version banner come from the `#[command(...)]` attributes above, and flags
 /// that apply to a single run live on the per-command `*Args` types rather
 /// than here.
@@ -41,10 +41,11 @@ pub struct Cli {
 ///
 /// `Check` runs compatibility assertions, while `Inspect` and `Fixtures`
 /// provide offline project and fixture information. `Report` renders a
-/// previously generated JSON report, `Completions` prints a shell
-/// completion script, and `Version` prints the tool version. Parsing this
-/// enum is handled by `clap`; the variants themselves do not perform I/O or
-/// panic during argument parsing.
+/// previously generated JSON report, `Cache` manages cached execution
+/// results, `Lock` verifies the fixture-pack pin, `Completions` prints a
+/// shell completion script, and `Version` prints the tool version. Parsing
+/// this enum is handled by `clap`; the variants themselves do not perform
+/// I/O or panic during argument parsing.
 pub enum Command {
     /// Run compatibility checks against the current project.
     Check(CheckArgs),
@@ -57,6 +58,9 @@ pub enum Command {
     /// Manage the local result cache.
     #[command(subcommand)]
     Cache(CacheArgs),
+    /// Manage the fixture-pack lockfile.
+    #[command(subcommand)]
+    Lock(LockArgs),
     /// Print a shell completion script.
     Completions(CompletionsArgs),
     /// Print the tool version.
